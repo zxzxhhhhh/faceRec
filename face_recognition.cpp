@@ -40,12 +40,55 @@ using anet_type = loss_metric<fc_no_bias<128,avg_pool_everything<
                             input_rgb_image_sized<150>
                             >>>>>>>>>>>>;
 
+std::vector<string> find_pred_name(std::vector<matrix<float,0,1>> &face_descriptors,
+		    std::vector<string> face_names,
+		    std::vector<matrix<float,128,1>> &face_data){
+  std::vector<string> pred_names;
+  float min_distance = 1.0, distance;
+  size_t index_min_dist;
+
+  for (size_t i = 0; i < face_descriptors.size(); ++i) {
+    for (size_t j = 0; j < face_data.size(); ++j){
+	  distance = length(face_descriptors[i]-face_data[j]);
+	  if (distance < min_distance){
+	      min_distance = distance;
+	      index_min_dist = j;
+	    }
+	}
+      pred_names.push_back(face_names[index_min_dist]);
+    }
+  return pred_names;
+}
+
+std::vector<string> find_pred_name_average(std::vector<matrix<float,0,1>> & face_descriptors,
+					   std::map<string, std::vector<matrix<float,128,1>>> & training_set){
+  std::vector<string> pred_names;
+  float min_distance = 1.0, distance;
+  std::map<string, std::vector<matrix<float,128,1>>>::iterator it;
+  std::map<string, std::vector<matrix<float,128,1>>>::iterator min_it;
+  for (size_t i = 0; i < face_descriptors.size(); ++i) {
+    for (it=training_set.begin(); it!=training_set.end(); ++it) {
+      distance = 0;
+      for(size_t j = 0; j < it->second.size(); j++){
+	  distance += length(face_descriptors[i]-it->second[j]);
+	}
+      distance = distance / it->second.size();
+      if (distance < min_distance){
+	min_distance = distance;
+	min_it = it;
+      }
+    }
+    pred_names.push_back(min_it->first);
+  }
+  
+  
+  return pred_names;
+}
 // ----------------------------------------------------------------------------------------
 int main(int argc, char** argv) try
 {
 
-  std::vector<string> pred_names;
-
+  
     //--------------------------------------- Face Database ---------------------------
     // Notice the database directory: default is "./database/trainingSet/trainingSet.txt"
     std::vector<string> face_names;
@@ -64,6 +107,27 @@ int main(int argc, char** argv) try
 	}
       cout << face_names.size() << "faces data loaded." << endl;
     }
+    
+    // using std::map to store the training database.
+    string face_name_one_person;
+    std::vector<matrix<float,128,1>> faces_data_one_person;
+    std::map<string, std::vector<matrix<float,128,1>>> training_set;
+
+    if(face_names.size() == 0 ) 
+      cout << "No data inside traing set!" << endl;
+    else{
+      face_name_one_person = face_names[0];
+      faces_data_one_person.push_back(face_data[0]);
+      for(size_t i = 1; i < face_names.size(); i++){
+	if( face_names[i] !=  face_name_one_person){
+	  training_set[face_name_one_person] = faces_data_one_person;
+	  faces_data_one_person.clear();
+	  face_name_one_person = face_names[i];
+	}
+	faces_data_one_person.push_back(face_data[i]);
+      }
+      training_set[face_name_one_person] = faces_data_one_person;
+    }
     //-------------------------------------------------------------------------------------
     // Face detector.
     frontal_face_detector detector = get_frontal_face_detector();
@@ -81,7 +145,7 @@ int main(int argc, char** argv) try
 
     if (!cap.isOpened()) {
 	cerr << "Unable to connect to camera" << endl;
-	return 1;
+	//	return 1;
       }
     
     gui faceGui; // setup the GUI
@@ -119,22 +183,9 @@ int main(int argc, char** argv) try
 	std::vector<matrix<float,0,1>> face_descriptors = net(faces);
 	
 	// This will find the correct person name based on the face_descriptors.
-	pred_names.clear();
-	float min_distance = 1.0, distance;
-	size_t index_min_dist;
-	for (size_t i = 0; i < face_descriptors.size(); ++i)
-	  {
-	    for (size_t j = 0; j < face_data.size(); ++j)
-	      {
-		distance = length(face_descriptors[i]-face_data[j]);
-		if (distance < min_distance)
-		  {
-		    min_distance = distance;
-		    index_min_dist = j;
-		  }
-	      }
-	    pred_names.push_back(face_names[index_min_dist]);
-	  }
+	std::vector<string> pred_names;
+	//pred_names  = find_pred_name(face_descriptors, face_names, face_data);
+	pred_names = find_pred_name_average(face_descriptors, training_set);
 	// Update the GUI given the predicted data.
 	faceGui.updateGui(img_show, dets, pred_names);
       } //while
